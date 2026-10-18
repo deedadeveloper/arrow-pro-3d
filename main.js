@@ -460,6 +460,12 @@ if (new URLSearchParams(window.location.search).has('test')) {
       renderArrows();
       frameCamera(activeTower.bounds);
       return true;
+    },
+    triggerBlockedFeedback() {
+      const target = activePuzzle.arrows[0];
+      if (!target || canSlide(target)) return false;
+      removeArrow(target);
+      return statusEl.textContent.includes('Blocked');
     }
   };
 }
