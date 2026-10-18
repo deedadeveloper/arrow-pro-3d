@@ -3,26 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#070911">
 <title>Arrow Pro 3D</title>
-<style>
-:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 15%,#242b49 0,#0d1020 45%,#070911 100%);color:#f3f5fb;display:flex;justify-content:center}
-.app{width:min(980px,100%);padding:18px 14px 28px;text-align:center}
-h1{margin:0;font-size:clamp(1.7rem,5vw,2.5rem);letter-spacing:.02em}
-.subtitle{margin:4px 0 12px;color:#9ba5bd}
-.stats{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:10px}
-.stat{min-width:78px}.label{font-size:.68rem;color:#7d879f;text-transform:uppercase;letter-spacing:.08em}.value{font-weight:800;font-size:1.05rem;color:#f6821f}
-#status{min-height:1.4em;margin:8px 0;color:#c0c7d8}
-#viewport{width:100%;display:flex;justify-content:center;overflow:hidden;border:1px solid #343c56;border-radius:16px;background:#090c15;box-shadow:0 18px 60px rgba(0,0,0,.4)}
-#game-canvas{display:block;width:100%;max-width:900px;height:auto;min-height:420px;touch-action:none;cursor:grab}
-#game-canvas:active{cursor:grabbing}
-.controls,.level-controls{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
-button,input{font:inherit;border-radius:9px;border:1px solid #3b435b;background:#171b2b;color:#f2f4fa;padding:10px 14px}
-button{cursor:pointer;font-weight:700}button:hover{border-color:#f6821f;background:#20263a}button:active{transform:translateY(1px)}
-#random-btn{border-color:#f6821f;color:#ffad62}.level-controls input{width:86px;text-align:center}.level-controls button{padding:9px 12px}
-.hint{margin:13px auto 0;color:#6f7890;font-size:.8rem;max-width:700px}
-</style>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
 <main class="app">
@@ -33,7 +16,7 @@ button{cursor:pointer;font-weight:700}button:hover{border-color:#f6821f;backgrou
     <div class="stat"><div class="label">Shape</div><div class="value" id="shape-name">—</div></div>
     <div class="stat"><div class="label">Arrows</div><div class="value" id="cell-count">0</div></div>
   </div>
-  <p id="status">Generating tower…</p>
+  <p id="status" role="status" aria-live="polite">Generating tower…</p>
   <section id="viewport" aria-label="3D tower puzzle viewport">
     <canvas id="game-canvas"></canvas>
   </section>
