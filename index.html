@@ -21,20 +21,20 @@ h1{margin:0;font-size:clamp(1.7rem,5vw,2.5rem);letter-spacing:.02em}
 button,input{font:inherit;border-radius:9px;border:1px solid #3b435b;background:#171b2b;color:#f2f4fa;padding:10px 14px}
 button{cursor:pointer;font-weight:700}button:hover{border-color:#f6821f;background:#20263a}button:active{transform:translateY(1px)}
 #random-btn{border-color:#f6821f;color:#ffad62}.level-controls input{width:86px;text-align:center}.level-controls button{padding:9px 12px}
-.hint{margin:13px auto 0;color:#6f7890;font-size:.8rem;max-width:600px}
+.hint{margin:13px auto 0;color:#6f7890;font-size:.8rem;max-width:700px}
 </style>
 </head>
 <body>
 <main class="app">
   <h1>🏹 Arrow Pro 3D</h1>
-  <p class="subtitle">Tower renderer prototype — the puzzle engine comes next.</p>
+  <p class="subtitle">Rotate the tower. Pick arrows. Clear the path. Empty the tower.</p>
   <div class="stats">
     <div class="stat"><div class="label">Level</div><div class="value" id="level-num">1</div></div>
     <div class="stat"><div class="label">Shape</div><div class="value" id="shape-name">—</div></div>
-    <div class="stat"><div class="label">Cells</div><div class="value" id="cell-count">0</div></div>
+    <div class="stat"><div class="label">Arrows</div><div class="value" id="cell-count">0</div></div>
   </div>
   <p id="status">Generating tower…</p>
-  <section id="viewport" aria-label="3D tower viewport">
+  <section id="viewport" aria-label="3D tower puzzle viewport">
     <canvas id="game-canvas"></canvas>
   </section>
   <div class="controls">
@@ -48,9 +48,10 @@ button{cursor:pointer;font-weight:700}button:hover{border-color:#f6821f;backgrou
     <button id="load-level-btn">Load Level</button>
     <button id="next-btn">Next →</button>
   </div>
-  <p class="hint">Drag to orbit the tower • pinch/scroll to zoom • use Auto Spin to inspect every side.</p>
+  <p class="hint">Drag to rotate • pinch/scroll to zoom • tap an arrow to move it • blocked arrows flash red.</p>
 </main>
 <script src="./tower-generator.js"></script>
+<script src="./arrow-puzzle.js"></script>
 <script type="module" src="./main.js"></script>
 </body>
 </html>
