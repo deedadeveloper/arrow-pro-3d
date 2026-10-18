@@ -1,149 +1,56 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Arrow Pro 3D</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);color:#eee;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px}
-h1{font-size:2rem;margin-bottom:4px}
-#subtitle{color:#aaa;font-size:.9rem;margin-bottom:12px}
-#stats{display:flex;gap:20px;margin-bottom:8px}
-.stat{text-align:center}
-.stat-label{color:#888;font-size:.75rem;text-transform:uppercase}
-.stat-value{font-size:1.3rem;font-weight:bold;color:#f6821f}
-#status{color:#aaa;font-size:.9rem;min-height:1.2em;margin-bottom:8px;text-align:center}
-canvas{border:2px solid #f6821f;border-radius:10px;background:#111;cursor:pointer;max-width:100%;touch-action:none}
-#controls{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-button{padding:10px 20px;font-size:.95rem;border:2px solid #555;border-radius:8px;background:rgba(255,255,255,.08);color:#eee;cursor:pointer;transition:all .2s}
-button:hover{background:rgba(255,255,255,.18);border-color:#f6821f}
-#reset-btn{border-color:#e74c3c;color:#e74c3c}
-#reset-btn:hover{background:#e74c3c;color:#fff}
-#prev-btn,#next-btn{border-color:#3498db;color:#3498db}
-#prev-btn:hover,#next-btn:hover{background:#3498db;color:#fff}
-.hint{color:#666;font-size:.8rem;margin-top:16px;text-align:center;max-width:400px}
+:root{color-scheme:dark;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% 15%,#242b49 0,#0d1020 45%,#070911 100%);color:#f3f5fb;display:flex;justify-content:center}
+.app{width:min(980px,100%);padding:18px 14px 28px;text-align:center}
+h1{margin:0;font-size:clamp(1.7rem,5vw,2.5rem);letter-spacing:.02em}
+.subtitle{margin:4px 0 12px;color:#9ba5bd}
+.stats{display:flex;justify-content:center;gap:18px;flex-wrap:wrap;margin-bottom:10px}
+.stat{min-width:78px}.label{font-size:.68rem;color:#7d879f;text-transform:uppercase;letter-spacing:.08em}.value{font-weight:800;font-size:1.05rem;color:#f6821f}
+#status{min-height:1.4em;margin:8px 0;color:#c0c7d8}
+#viewport{width:100%;display:flex;justify-content:center;overflow:hidden;border:1px solid #343c56;border-radius:16px;background:#090c15;box-shadow:0 18px 60px rgba(0,0,0,.4)}
+#game-canvas{display:block;width:100%;max-width:900px;height:auto;min-height:420px;touch-action:none;cursor:grab}
+#game-canvas:active{cursor:grabbing}
+.controls,.level-controls{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+button,input{font:inherit;border-radius:9px;border:1px solid #3b435b;background:#171b2b;color:#f2f4fa;padding:10px 14px}
+button{cursor:pointer;font-weight:700}button:hover{border-color:#f6821f;background:#20263a}button:active{transform:translateY(1px)}
+#random-btn{border-color:#f6821f;color:#ffad62}.level-controls input{width:86px;text-align:center}.level-controls button{padding:9px 12px}
+.hint{margin:13px auto 0;color:#6f7890;font-size:.8rem;max-width:600px}
 </style>
 </head>
 <body>
-<h1>➡️ Arrow Pro 3D</h1>
-<p id="subtitle">Clear all the arrows off the board!</p>
-<div id="stats">
-<div class="stat"><div class="stat-label">Level</div><div class="stat-value" id="level-num">1</div></div>
-<div class="stat"><div class="stat-label">Moves</div><div class="stat-value" id="move-count">0</div></div>
-<div class="stat"><div class="stat-label">Best</div><div class="stat-value" id="best-moves">—</div></div>
-<div class="stat"><div class="stat-label">Arrows</div><div class="stat-value" id="arrow-count">0</div></div>
-</div>
-<p id="status">Tap an arrow to send it flying!</p>
-<canvas id="game-canvas" width="500" height="500"></canvas>
-<div id="controls">
-<button id="prev-btn">← Prev</button>
-<button id="reset-btn">↻ Reset</button>
-<button id="next-btn">Next →</button>
-</div>
-<p class="hint">Tap an arrow to launch it. If blocked, it shakes. Clear them all to win!</p>
-<script>
-(function(){
-const canvas=document.getElementById('game-canvas'),ctx=canvas.getContext('2d');
-const statusEl=document.getElementById('status'),levelEl=document.getElementById('level-num');
-const moveEl=document.getElementById('move-count'),bestEl=document.getElementById('best-moves'),arrowEl=document.getElementById('arrow-count');
-const dirMap={up:{dr:-1,dc:0,rot:0},down:{dr:1,dc:0,rot:180},left:{dr:0,dc:-1,rot:270},right:{dr:0,dc:1,rot:90}};
-const dirNames=Object.keys(dirMap);
-const handLevels=[
-{size:4,arrows:[{r:0,c:3,dir:'right'},{r:3,c:0,dir:'up'}]},
-{size:4,arrows:[{r:1,c:0,dir:'up'},{r:2,c:0,dir:'up'}]},
-{size:4,arrows:[{r:0,c:0,dir:'right'},{r:0,c:2,dir:'down'},{r:2,c:0,dir:'up'}]},
-{size:4,arrows:[{r:0,c:0,dir:'right'},{r:0,c:3,dir:'down'},{r:3,c:0,dir:'up'},{r:3,c:3,dir:'left'}]},
-{size:5,arrows:[{r:1,c:0,dir:'up'},{r:2,c:0,dir:'up'},{r:3,c:0,dir:'up'}]},
-{size:5,arrows:[{r:0,c:0,dir:'right'},{r:0,c:2,dir:'down'},{r:2,c:2,dir:'down'},{r:4,c:0,dir:'up'}]},
-{size:5,arrows:[{r:0,c:0,dir:'right'},{r:0,c:4,dir:'down'},{r:4,c:0,dir:'up'},{r:4,c:4,dir:'left'}]},
-{size:5,arrows:[{r:0,c:0,dir:'down'},{r:0,c:2,dir:'down'},{r:0,c:4,dir:'down'},{r:2,c:0,dir:'right'},{r:4,c:4,dir:'left'}]},
-{size:5,arrows:[{r:0,c:1,dir:'right'},{r:0,c:3,dir:'down'},{r:2,c:0,dir:'up'},{r:3,c:3,dir:'left'},{r:4,c:1,dir:'up'}]},
-{size:6,arrows:[{r:0,c:0,dir:'right'},{r:0,c:3,dir:'down'},{r:2,c:0,dir:'up'},{r:3,c:5,dir:'left'},{r:5,c:2,dir:'up'}]},
-{size:6,arrows:[{r:1,c:0,dir:'right'},{r:1,c:4,dir:'down'},{r:3,c:0,dir:'up'},{r:4,c:2,dir:'left'},{r:0,c:3,dir:'down'},{r:5,c:5,dir:'left'}]},
-{size:6,arrows:[{r:0,c:0,dir:'down'},{r:0,c:2,dir:'right'},{r:0,c:5,dir:'down'},{r:3,c:0,dir:'up'},{r:4,c:3,dir:'left'},{r:5,c:5,dir:'left'}]},
-{size:7,arrows:[{r:1,c:0,dir:'right'},{r:1,c:5,dir:'down'},{r:3,c:2,dir:'up'},{r:4,c:2,dir:'up'},{r:5,c:0,dir:'right'},{r:6,c:4,dir:'left'}]},
-{size:7,arrows:[{r:0,c:0,dir:'right'},{r:0,c:3,dir:'down'},{r:0,c:6,dir:'down'},{r:3,c:0,dir:'up'},{r:3,c:6,dir:'left'},{r:6,c:0,dir:'up'},{r:6,c:3,dir:'right'},{r:6,c:6,dir:'left'}]},
-{size:7,arrows:[{r:0,c:1,dir:'down'},{r:0,c:5,dir:'down'},{r:2,c:0,dir:'right'},{r:2,c:6,dir:'left'},{r:4,c:1,dir:'up'},{r:4,c:5,dir:'up'},{r:6,c:0,dir:'right'},{r:6,c:6,dir:'left'}]},
-];
-function isSolvable(arrows,size){
-const b=Array(size).fill(null).map(()=>Array(size).fill(null));
-arrows.forEach(a=>{b[a.r][a.c]=a});
-let rem=[...arrows];
-while(rem.length>0){let f=false;
-for(let i=0;i<rem.length;i++){const a=rem[i],d=dirMap[a.dir];
-let r=a.r+d.dr,c=a.c+d.dc,cl=true;
-while(r>=0&&r<size&&c>=0&&c<size){if(b[r][c]){cl=false;break}r+=d.dr;c+=d.dc}
-if(cl){b[a.r][a.c]=null;rem.splice(i,1);f=true;break}}
-if(!f)return false}
-return true}
-function genLevel(n){
-const size=Math.min(4+Math.floor((n-15)/4),8);
-const num=Math.min(3+Math.floor((n-15)/2),Math.floor(size*size*.5));
-let best=null,bb=-1;
-for(let a=0;a<200;a++){
-const arr=[],used=new Set();
-for(let i=0;i<num;i++){let r,c,k;do{r=Math.floor(Math.random()*size);c=Math.floor(Math.random()*size);k=r*100+c}while(used.has(k));used.add(k);arr.push({r,c,dir:dirNames[Math.floor(Math.random()*4)]})}
-if(!isSolvable(arr,size))continue;
-const b=Array(size).fill(null).map(()=>Array(size).fill(null));arr.forEach(a=>{b[a.r][a.c]=a});
-let bl=0;arr.forEach(a=>{const d=dirMap[a.dir];let r=a.r+d.dr,c=a.c+d.dc;while(r>=0&&r<size&&c>=0&&c<size){if(b[r][c]){bl++;break}r+=d.dr;c+=d.dc}});
-if(bl>bb){bb=bl;best={size,arrows:arr}}if(bl>=Math.min(num-1,3))break}
-return best||{size:4,arrows:[{r:0,c:0,dir:'right'},{r:3,c:0,dir:'up'}]}}
-function getLevel(n){return n<=handLevels.length?handLevels[n-1]:genLevel(n)}
-let cur=parseInt(localStorage.getItem('a3d_lv')||'1');
-let board=[],arrows=[],flying=[],shakeA=null,shakeT=0,cs,ox,oy,moves=0,won=false,lvData=null;
-function loadLevel(n){cur=n;localStorage.setItem('a3d_lv',String(n));lvData=getLevel(n);
-const sz=lvData.size;board=Array(sz).fill(null).map(()=>Array(sz).fill(null));arrows=[];
-lvData.arrows.forEach((a,i)=>{const ar={r:a.r,c:a.c,dir:a.dir,id:i};board[a.r][a.c]=ar;arrows.push(ar)});
-flying=[];shakeA=null;moves=0;won=false;cs=Math.floor(440/sz);ox=(500-cs*sz)/2;oy=(500-cs*sz)/2;updateUI()}
-function updateUI(){levelEl.textContent=cur;moveEl.textContent=moves;arrowEl.textContent=arrows.length;
-const b=localStorage.getItem('a3d_best_'+cur);bestEl.textContent=b||'—';
-if(won)statusEl.textContent='✅ Cleared in '+moves+' moves! Tap board for next →';
-else statusEl.textContent='Tap an arrow to launch it! '+arrows.length+' arrows left.'}
-function pathClear(a){const d=dirMap[a.dir];let r=a.r+d.dr,c=a.c+d.dc,sz=board.length;
-while(r>=0&&r<sz&&c>=0&&c<sz){if(board[r][c])return false;r+=d.dr;c+=d.dc}return true}
-function clickArrow(a){if(won||flying.length>0)return;
-if(pathClear(a)){board[a.r][a.c]=null;arrows=arrows.filter(x=>x.id!==a.id);moves++;
-const d=dirMap[a.dir];flying.push({startR:a.r,startC:a.c,dir:a.dir,progress:0,dr:d.dr,dc:d.dc});
-if(arrows.length===0){const b=localStorage.getItem('a3d_best_'+cur);if(!b||moves<parseInt(b))localStorage.setItem('a3d_best_'+cur,String(moves))}}
-else{shakeA=a;shakeT=0}updateUI()}
-function draw3DArrow(x,y,s,dir,op,sc){const d=dirMap[dir],sz=s*(sc||1),cx=x+s/2,cy=y+s/2;
-ctx.save();ctx.globalAlpha=op;
-ctx.fillStyle='rgba(0,0,0,0.35)';ctx.beginPath();ctx.ellipse(cx+3,y+s-2,sz*.35,sz*.1,0,0,Math.PI*2);ctx.fill();
-const m=4,ts=sz-m*2;ctx.fillStyle='#a04d0e';ctx.fillRect(x+m,y+m+4,ts,ts);
-const g=ctx.createLinearGradient(x+m,y+m,x+m+ts,y+m+ts);g.addColorStop(0,'#ff9a3c');g.addColorStop(1,'#f6821f');
-ctx.fillStyle=g;ctx.fillRect(x+m,y+m,ts,ts);ctx.fillStyle='rgba(255,255,255,0.25)';ctx.fillRect(x+m,y+m,ts,ts*.3);
-ctx.translate(cx,cy);ctx.rotate(d.rot*Math.PI/180);ctx.fillStyle='#fff';
-ctx.font='bold '+Math.floor(sz*.5)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('➤',0,0);ctx.restore()}
-function drawBoard(){const sz=board.length;ctx.fillStyle='#111';ctx.fillRect(0,0,500,500);
-ctx.fillStyle='#1a1a2e';ctx.fillRect(ox-8,oy-8,cs*sz+16,cs*sz+16);
-for(let r=0;r<sz;r++)for(let c=0;c<sz;c++){const x=ox+c*cs,y=oy+r*cs;
-ctx.fillStyle=(r+c)%2===0?'#2a2a3e':'#252538';ctx.fillRect(x,y,cs,cs);
-ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=1;ctx.strokeRect(x+.5,y+.5,cs-1,cs-1)}
-ctx.strokeStyle='#f6821f';ctx.lineWidth=2;ctx.strokeRect(ox-8,oy-8,cs*sz+16,cs*sz+16);
-arrows.forEach(a=>{let x=ox+a.c*cs,y=oy+a.r*cs;if(shakeA&&shakeA.id===a.id)x+=Math.sin(shakeT*.8)*6;draw3DArrow(x,y,cs,a.dir,1,1)});
-flying.forEach(f=>{const d=dirMap[f.dir];f.progress+=.04;const dist=f.progress*(sz+2);
-draw3DArrow(ox+(f.startC+d.dc*dist)*cs,oy+(f.startR+d.dr*dist)*cs,cs,f.dir,Math.max(0,1-f.progress*.6),Math.max(.3,1-f.progress*.4))});
-flying=flying.filter(f=>f.progress<1.5);
-if(arrows.length===0&&flying.length===0&&!won){won=true;updateUI()}
-if(won){ctx.fillStyle='rgba(0,0,0,0.65)';ctx.fillRect(0,0,500,500);
-ctx.fillStyle='#f6821f';ctx.font='26px sans-serif';ctx.textAlign='center';ctx.fillText('✅ Level Cleared!',250,220);
-ctx.font='16px sans-serif';ctx.fillStyle='#fff';
-const nb=localStorage.getItem('a3d_best_'+cur)==moves;ctx.fillText('Moves: '+moves+(nb?'  🏆 New Best!':''),250,250);
-ctx.fillText('Tap board for next level →',250,280)}
-if(shakeA){shakeT++;if(shakeT>20){shakeA=null;shakeT=0}}}
-function getCell(px,py){const sz=board.length,c=Math.floor((px-ox)/cs),r=Math.floor((py-oy)/cs);
-if(r>=0&&r<sz&&c>=0&&c<sz)return{r,c}return null}
-function tap(px,py){if(won){loadLevel(cur+1);return}const cell=getCell(px,py);if(cell&&board[cell.r][cell.c])clickArrow(board[cell.r][cell.c])}
-canvas.addEventListener('click',e=>{const r=canvas.getBoundingClientRect();tap((e.clientX-r.left)*(canvas.width/r.width),(e.clientY-r.top)*(canvas.height/r.height))});
-canvas.addEventListener('touchstart',e=>{e.preventDefault();const r=canvas.getBoundingClientRect(),t=e.touches[0];
-tap((t.clientX-r.left)*(canvas.width/r.width),(t.clientY-r.top)*(canvas.height/r.height))},{passive:false});
-document.getElementById('reset-btn').addEventListener('click',()=>loadLevel(cur));
-document.getElementById('prev-btn').addEventListener('click',()=>{if(cur>1)loadLevel(cur-1)});
-document.getElementById('next-btn').addEventListener('click',()=>loadLevel(cur+1));
-function loop(){drawBoard();requestAnimationFrame(loop)}
-loadLevel(cur);loop();
-})();
-</script>
+<main class="app">
+  <h1>🏹 Arrow Pro 3D</h1>
+  <p class="subtitle">Tower renderer prototype — the puzzle engine comes next.</p>
+  <div class="stats">
+    <div class="stat"><div class="label">Level</div><div class="value" id="level-num">1</div></div>
+    <div class="stat"><div class="label">Shape</div><div class="value" id="shape-name">—</div></div>
+    <div class="stat"><div class="label">Cells</div><div class="value" id="cell-count">0</div></div>
+  </div>
+  <p id="status">Generating tower…</p>
+  <section id="viewport" aria-label="3D tower viewport">
+    <canvas id="game-canvas"></canvas>
+  </section>
+  <div class="controls">
+    <button id="spin-btn">⟳ Auto Spin</button>
+    <button id="reset-view-btn">⌖ Reset View</button>
+    <button id="random-btn">🎲 Random Shape</button>
+  </div>
+  <div class="level-controls">
+    <button id="prev-btn">← Prev</button>
+    <input id="level-input" type="number" min="1" step="1" value="1" aria-label="Level number">
+    <button id="load-level-btn">Load Level</button>
+    <button id="next-btn">Next →</button>
+  </div>
+  <p class="hint">Drag to orbit the tower • pinch/scroll to zoom • use Auto Spin to inspect every side.</p>
+</main>
+<script src="./tower-generator.js"></script>
+<script type="module" src="./main.js"></script>
 </body>
 </html>
