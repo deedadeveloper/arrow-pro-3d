@@ -46,8 +46,45 @@ scene.fog = new THREE.Fog(0x090b14, 24, 55);
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
 camera.position.set(11, 10, 15);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+let renderer;
+try {
+  // Mobile browsers can refuse high-performance / multisampled contexts.
+  renderer = new THREE.WebGLRenderer({
+    antialias: false,
+    alpha: false,
+    depth: true,
+    stencil: false,
+    powerPreference: 'low-power',
+    failIfMajorPerformanceCaveat: false,
+    preserveDrawingBuffer: false
+  });
+} catch (primaryError) {
+  console.error('Primary WebGL initialization failed:', primaryError);
+  try {
+    // Retry with the smallest practical WebGL context configuration.
+    renderer = new THREE.WebGLRenderer({
+      antialias: false,
+      alpha: false,
+      depth: true,
+      stencil: false,
+      powerPreference: 'default',
+      failIfMajorPerformanceCaveat: false,
+      preserveDrawingBuffer: false
+    });
+  } catch (fallbackError) {
+    const message = 'WebGL is unavailable in this browser. Open this game in Chrome or enable hardware acceleration, then reload. If Chrome also fails, restart the browser to release graphics resources.';
+    statusEl.textContent = message;
+    statusEl.style.color = '#ff7b72';
+    canvasHost.setAttribute('aria-label', message);
+    recordPlaytestEvent('webgl_context_failed', {
+      primary: String(primaryError?.message || primaryError),
+      fallback: String(fallbackError?.message || fallbackError),
+      userAgent: navigator.userAgent
+    });
+    throw fallbackError;
+  }
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
