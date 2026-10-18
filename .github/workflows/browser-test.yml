@@ -23,7 +23,7 @@ jobs:
           python3 -m http.server 4173 > /tmp/arrow-pro-server.log 2>&1 &
           echo $! > /tmp/arrow-pro-server.pid
 
-      - name: Run browser test
+      - name: Run browser tests
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
@@ -41,42 +41,97 @@ jobs:
             page.on('console', message => {
               if (message.type() === 'error') errors.push(message.text());
             });
+            page.on('requestfailed', request => {
+              errors.push(`Request failed: ${request.url()} — ${request.failure()?.errorText || 'unknown'}`);
+            });
 
-            await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
-            await page.waitForTimeout(500);
+            try {
+              await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+              await page.waitForTimeout(500);
 
-            const title = await page.title();
-            if (title !== 'Arrow Pro 3D') throw new Error(`Unexpected title: ${title}`);
+              const title = await page.title();
+              if (title !== 'Arrow Pro 3D') throw new Error(`Unexpected title: ${title}`);
 
-            const canvas = page.locator('#game-canvas');
-            if (await canvas.count() !== 1) throw new Error('3D canvas was not created');
+              const stats = await page.evaluate(() => ({
+                level: document.querySelector('#level-num')?.textContent,
+                shape: document.querySelector('#shape-name')?.textContent,
+                arrows: document.querySelector('#cell-count')?.textContent,
+                status: document.querySelector('#status')?.textContent,
+                webgl: !!document.querySelector('#game-canvas')?.getContext('webgl2'),
+                canvasTag: document.querySelector('#game-canvas')?.tagName
+              }));
 
-            const stats = await page.evaluate(() => ({
-              level: document.querySelector('#level-num')?.textContent,
-              shape: document.querySelector('#shape-name')?.textContent,
-              arrows: document.querySelector('#cell-count')?.textContent,
-              status: document.querySelector('#status')?.textContent,
-              webgl: !!document.querySelector('#game-canvas')?.getContext('webgl2')
-            }));
+              if (stats.canvasTag !== 'CANVAS') throw new Error(`3D canvas missing: ${JSON.stringify(stats)}`);
+              if (!stats.webgl) throw new Error('WebGL2 context was not available');
+              if (!stats.shape || stats.shape === '—') throw new Error(`Tower shape did not render: ${JSON.stringify(stats)}`);
+              if (!stats.arrows || !stats.arrows.includes('/')) throw new Error(`Arrow count did not render: ${stats.arrows}`);
 
-            if (!stats.webgl) throw new Error('WebGL2 context was not available');
-            if (!stats.shape || stats.shape === '—') throw new Error('Tower shape did not render');
-            if (!stats.arrows || !stats.arrows.includes('/')) throw new Error(`Arrow count did not render: ${stats.arrows}`);
+              const generatorResults = await page.evaluate(() => {
+                const results = [];
+                for (let level = 1; level <= 20; level++) {
+                  const tower = window.ArrowTowerGenerator.generateTower({ level, seed: `browser-test-${level}` });
+                  const puzzle = window.ArrowPuzzleGenerator.generate({ tower, level, seed: `browser-test-${level}` });
+                  results.push({
+                    level,
+                    shape: tower.type,
+                    cells: tower.cells.length,
+                    arrows: puzzle.arrows.length,
+                    solvable: window.ArrowPuzzleGenerator.isSolvable(puzzle.arrows, puzzle.bounds),
+                    boundsValid: tower.cells.every(c =>
+                      c.x >= 0 && c.x < tower.bounds.width &&
+                      c.y >= 0 && c.y < tower.bounds.height &&
+                      c.z >= 0 && c.z < tower.bounds.depth
+                    )
+                  });
+                }
+                return results;
+              });
+              if (generatorResults.some(r => !r.cells || r.arrows < 2 || !r.solvable || !r.boundsValid)) {
+                throw new Error(`Generator regression: ${JSON.stringify(generatorResults.filter(r => !r.cells || r.arrows < 2 || !r.solvable || !r.boundsValid))}`);
+              }
 
-            await page.getByRole('button', { name: /Random Shape/ }).click();
-            await page.waitForTimeout(250);
-            const afterRandom = await page.locator('#cell-count').textContent();
-            if (!afterRandom.includes('/')) throw new Error('Random level interaction failed');
+              await page.getByRole('button', { name: /Random Shape/ }).click();
+              await page.waitForTimeout(100);
+              const afterRandom = await page.locator('#cell-count').textContent();
+              if (!afterRandom.includes('/')) throw new Error('Random shape interaction failed');
 
-            await page.getByRole('button', { name: /Next/ }).click();
-            await page.waitForTimeout(250);
-            const nextLevel = await page.locator('#level-num').textContent();
-            if (nextLevel !== '2') throw new Error(`Next level failed: ${nextLevel}`);
+              await page.getByRole('button', { name: /Next/ }).click();
+              await page.waitForTimeout(100);
+              const nextLevel = await page.locator('#level-num').textContent();
+              if (nextLevel !== '2') throw new Error(`Next level failed: ${nextLevel}`);
 
-            console.log(JSON.stringify({ title, initial: stats, afterRandom, nextLevel, errors }, null, 2));
-            if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
+              await page.getByRole('button', { name: /Prev/ }).click();
+              const previousLevel = await page.locator('#level-num').textContent();
+              if (previousLevel !== '1') throw new Error(`Previous level failed: ${previousLevel}`);
 
-            await browser.close();
+              await page.getByRole('button', { name: /Auto Spin/ }).click();
+              if (!(await page.locator('#spin-btn').textContent()).includes('Stop Spin')) {
+                throw new Error('Auto-spin did not toggle on');
+              }
+              await page.getByRole('button', { name: /Stop Spin/ }).click();
+
+              await page.locator('#level-input').fill('5');
+              await page.getByRole('button', { name: /Load Level/ }).click();
+              const loadedLevel = await page.locator('#level-num').textContent();
+              if (loadedLevel !== '5') throw new Error(`Load level failed: ${loadedLevel}`);
+
+              console.log(JSON.stringify({
+                result: 'PASS',
+                title,
+                initial: stats,
+                proceduralLevelsTested: generatorResults.length,
+                generatorResults,
+                afterRandom,
+                nextLevel,
+                previousLevel,
+                loadedLevel,
+                browserErrors: errors
+              }, null, 2));
+
+              if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
+            } finally {
+              await browser.close();
+            }
           })().catch(error => {
             console.error(error);
             process.exit(1);
