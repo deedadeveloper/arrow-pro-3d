@@ -415,6 +415,35 @@ levelInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') renderLevel(Number(levelInput.value) || 1);
 });
 
+// Test-only inspection hooks are enabled only for browser tests using ?test=1.
+if (new URLSearchParams(window.location.search).has('test')) {
+  window.__ARROW_PRO_TEST__ = {
+    getState() {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const projected = new THREE.Vector3();
+      return {
+        level: currentLevel,
+        status: statusEl.textContent,
+        solved,
+        arrows: activePuzzle.arrows.map(arrow => {
+          const point = arrow.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+          return {
+            id: arrow.id,
+            removed: arrow.removed === true,
+            animating: arrow.animating === true,
+            canSlide: !arrow.removed && !arrow.animating && canSlide(arrow),
+            x: rect.left + (point.x + 1) * rect.width / 2,
+            y: rect.top + (1 - point.y) * rect.height / 2
+          };
+        })
+      };
+    },
+    reloadLevel(level) {
+      renderLevel(level);
+    }
+  };
+}
+
 resize();
 renderLevel(currentLevel);
 animate();
