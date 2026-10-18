@@ -25,7 +25,8 @@ jobs:
 
       - name: Run browser test
         run: |
-          npx --yes playwright@1.55.0 install --with-deps chromium
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
           node <<'NODE'
           const { chromium } = require('playwright');
 
@@ -62,7 +63,6 @@ jobs:
             if (!stats.shape || stats.shape === '—') throw new Error('Tower shape did not render');
             if (!stats.arrows || !stats.arrows.includes('/')) throw new Error(`Arrow count did not render: ${stats.arrows}`);
 
-            const before = stats.arrows;
             await page.getByRole('button', { name: /Random Shape/ }).click();
             await page.waitForTimeout(250);
             const afterRandom = await page.locator('#cell-count').textContent();
