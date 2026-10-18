@@ -9,7 +9,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
   }
 }
 </script>
@@ -42,6 +43,22 @@
 </main>
 <script src="./tower-generator.js"></script>
 <script src="./arrow-puzzle.js"></script>
+<script>
+  window.addEventListener('error', function (event) {
+    const status = document.getElementById('status');
+    if (status && (event.target instanceof HTMLScriptElement || event.message)) {
+      status.textContent = 'Game startup error: ' + (event.message || 'A script failed to load. Try refreshing or opening in Chrome.');
+      status.style.color = '#ff7b72';
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', function (event) {
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Game startup error: ' + (event.reason && event.reason.message || String(event.reason));
+      status.style.color = '#ff7b72';
+    }
+  });
+</script>
 <script type="module" src="./main.js"></script>
 </body>
 </html>
