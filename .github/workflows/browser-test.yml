@@ -135,6 +135,38 @@ jobs:
                 throw new Error(`Could not clear level through real pointer clicks; removed=${clickRemovals}, remaining=${finalClickState.arrows.filter(arrow => !arrow.removed).length}, status=${finalClickState.status}`);
               }
 
+              const multiLevelClickResults = [];
+              for (const level of [2, 3, 5]) {
+                await page.evaluate(level => window.__ARROW_PRO_TEST__.reloadLevel(level), level);
+                await page.waitForTimeout(100);
+                let removedCount = 0;
+                for (let click = 0; click < 50; click++) {
+                  const state = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+                  const remaining = state.arrows.filter(arrow => !arrow.removed).length;
+                  if (remaining === 0) break;
+                  const target = state.arrows.find(arrow =>
+                    !arrow.removed && !arrow.animating && arrow.canSlide &&
+                    arrow.x > 0 && arrow.x < 1280 &&
+                    arrow.y > 0 && arrow.y < 900
+                  );
+                  if (!target) throw new Error(`Level ${level}: no visible movable arrow with ${remaining} remaining`);
+                  await page.mouse.click(target.x, target.y);
+                  await page.waitForTimeout(750);
+                  const after = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+                  const remainingAfter = after.arrows.filter(arrow => !arrow.removed).length;
+                  if (remainingAfter >= remaining) {
+                    throw new Error(`Level ${level}: arrow click failed to reduce count (${remaining} -> ${remainingAfter})`);
+                  }
+                  removedCount++;
+                }
+                const finalState = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+                const remaining = finalState.arrows.filter(arrow => !arrow.removed).length;
+                if (remaining !== 0 || !finalState.solved) {
+                  throw new Error(`Level ${level} was not cleared through clicks; remaining=${remaining}; status=${finalState.status}`);
+                }
+                multiLevelClickResults.push({ level, removedCount, solved: true });
+              }
+
               const generatorResults = await page.evaluate(() => {
                 const results = [];
                 for (let level = 1; level <= 20; level++) {
@@ -193,6 +225,7 @@ jobs:
                 recoveredBlockedStatus,
                 clickRemovals,
                 actualClickSolve,
+                multiLevelClickResults,
                 proceduralLevelsTested: generatorResults.length,
                 generatorResults,
                 afterRandom,
