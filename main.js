@@ -1,6 +1,35 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/controls/OrbitControls.js';
 
+const PLAYTEST_TOKEN = new URLSearchParams(window.location.search).get('playtest');
+const PLAYTEST_SESSION = (() => {
+  if (!PLAYTEST_TOKEN) return null;
+  const key = 'arrow-pro-playtest-session';
+  let value = sessionStorage.getItem(key);
+  if (!value) {
+    value = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    sessionStorage.setItem(key, value);
+  }
+  return value;
+})();
+function recordPlaytestEvent(type, detail = {}) {
+  if (!PLAYTEST_TOKEN || !PLAYTEST_SESSION) return;
+  const event = {
+    sessionId: PLAYTEST_SESSION,
+    token: PLAYTEST_TOKEN,
+    type,
+    at: new Date().toISOString(),
+    level: document.getElementById('level-num')?.textContent || null,
+    detail
+  };
+  fetch('/api/events', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(event),
+    keepalive: true
+  }).catch(() => {});
+}
+
 const canvasHost = document.getElementById('game-canvas');
 const levelEl = document.getElementById('level-num');
 const shapeEl = document.getElementById('shape-name');
@@ -236,6 +265,7 @@ function flashBlocked(arrow) {
   const original = mesh.position.clone();
   setArrowMaterial(arrow, blockedMaterial);
   statusEl.textContent = 'Blocked — another arrow is in the way.';
+  recordPlaytestEvent('arrow_blocked', { arrowId: arrow.id, direction: arrow.direction });
 
   const started = performance.now();
   function shake(now) {
@@ -259,6 +289,7 @@ function flashBlocked(arrow) {
 function removeArrow(arrow) {
   if (!arrow.mesh || arrow.animating || arrow.removed || movingArrow) return;
   if (!canSlide(arrow)) {
+    recordPlaytestEvent('arrow_attempt_blocked', { arrowId: arrow.id, direction: arrow.direction });
     flashBlocked(arrow);
     return;
   }
@@ -287,6 +318,7 @@ function removeArrow(arrow) {
     }
 
     arrow.removed = true;
+    recordPlaytestEvent('arrow_removed', { arrowId: arrow.id, direction: arrow.direction });
     arrow.animating = false;
     arrow.mesh.visible = false;
     movingArrow = null;
@@ -300,6 +332,7 @@ function checkSolved() {
   if (remaining === 0) {
     solved = true;
     statusEl.textContent = `🎉 Level ${currentLevel} cleared! Press Next for another tower.`;
+    recordPlaytestEvent('level_cleared', { level: currentLevel, arrowCount: activePuzzle.total });
     return;
   }
 
@@ -350,6 +383,7 @@ function renderLevel(level = currentLevel, seedOverride = null) {
   frameCamera(activeTower.bounds);
   updateStats();
   statusEl.textContent = `${activeTower.type} tower ready — pick an arrow with a clear path.`;
+  recordPlaytestEvent('level_loaded', { level: currentLevel, shape: activeTower.type, arrows: activePuzzle.total, seed });
 }
 
 function renderRandomTower() {
@@ -368,7 +402,10 @@ function pickArrow(event) {
   if (!hits.length) return;
   const group = hits[0].object.userData.arrowGroup;
   const arrow = group?.userData?.arrow;
-  if (arrow) removeArrow(arrow);
+  if (arrow) {
+    recordPlaytestEvent('arrow_clicked', { arrowId: arrow.id, direction: arrow.direction, canSlide: canSlide(arrow) });
+    removeArrow(arrow);
+  }
 }
 
 function resize() {
@@ -398,10 +435,13 @@ renderer.domElement.addEventListener('pointerup', event => {
 renderer.domElement.addEventListener('pointercancel', () => { pointerDown = null; });
 
 window.addEventListener('resize', resize);
+window.addEventListener('error', event => recordPlaytestEvent('javascript_error', { message: String(event.message || 'Unknown error'), source: event.filename || '', line: event.lineno || 0 }));
+window.addEventListener('unhandledrejection', event => recordPlaytestEvent('unhandled_rejection', { message: String(event.reason?.message || event.reason || 'Unknown rejection') }));
 document.getElementById('prev-btn').addEventListener('click', () => renderLevel(currentLevel - 1));
 document.getElementById('next-btn').addEventListener('click', () => renderLevel(currentLevel + 1));
-document.getElementById('random-btn').addEventListener('click', renderRandomTower);
+document.getElementById('random-btn').addEventListener('click', () => { recordPlaytestEvent('random_shape_clicked'); renderRandomTower(); });
 document.getElementById('spin-btn').addEventListener('click', event => {
+  recordPlaytestEvent('auto_spin_toggled', { enabled: !autoRotate });
   autoRotate = !autoRotate;
   event.currentTarget.textContent = autoRotate ? '⏸ Stop Spin' : '⟳ Auto Spin';
   statusEl.textContent = autoRotate ? 'Auto rotation enabled.' : 'Auto rotation stopped.';
@@ -472,4 +512,5 @@ if (new URLSearchParams(window.location.search).has('test')) {
 
 resize();
 renderLevel(currentLevel);
+recordPlaytestEvent('session_started', { userAgent: navigator.userAgent, viewport: { width: window.innerWidth, height: window.innerHeight }, pixelRatio: window.devicePixelRatio });
 animate();
