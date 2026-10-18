@@ -438,8 +438,8 @@ if (new URLSearchParams(window.location.search).has('test')) {
         })
       };
     },
-    reloadLevel(level) {
-      renderLevel(level);
+    reloadLevel(level, seed = null) {
+      renderLevel(level, seed);
     }
   };
 }
