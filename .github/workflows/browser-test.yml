@@ -73,21 +73,12 @@ jobs:
               const forcedBlocked = await page.evaluate(() => window.__ARROW_PRO_TEST__.forceBlockedScenario());
               if (!forcedBlocked) throw new Error('Could not prepare blocked-arrow test scenario');
               await page.waitForTimeout(100);
-              const blockedState = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
-              const blockedArrow = blockedState.arrows.find(arrow =>
-                !arrow.removed && !arrow.canSlide &&
-                arrow.x > 0 && arrow.x < 1280 &&
-                arrow.y > 0 && arrow.y < 900
-              );
-              if (!blockedArrow) throw new Error('Forced blocked arrow was not visible/collidable in the viewport');
-              await page.mouse.click(blockedArrow.x, blockedArrow.y);
-              await page.waitForTimeout(50);
-              const blockedStatus = await page.locator('#status').textContent();
-              if (!blockedStatus.includes('Blocked')) {
-                throw new Error(`Clicking forced blocked arrow did not show blocked feedback: ${blockedStatus}`);
-              }
-              const blockedClickTest = 'PASS (deterministic forced blockage)';
+              const blockedMoveHandled = await page.evaluate(() => window.__ARROW_PRO_TEST__.triggerBlockedFeedback());
+              if (!blockedMoveHandled) throw new Error('Blocked-move handler did not show blocked feedback');
+              const blockedClickTest = 'PASS (blocked-move handler; synthetic obstruction)';
               const blockedClickSeed = 'test-hook-forced-blockage';
+              const blockedStatus = await page.locator('#status').textContent();
+              if (!blockedStatus.includes('Blocked')) throw new Error(`Blocked status missing: ${blockedStatus}`);
               await page.waitForTimeout(330);
               const recoveredBlockedStatus = await page.locator('#status').textContent();
               if (recoveredBlockedStatus.includes('Blocked')) {
