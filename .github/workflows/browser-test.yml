@@ -71,8 +71,8 @@ jobs:
 
               const blockedArrow = interactionState.arrows.find(arrow =>
                 !arrow.removed && !arrow.canSlide &&
-                arrow.x > 0 && arrow.x < window.innerWidth &&
-                arrow.y > 0 && arrow.y < window.innerHeight
+                arrow.x > 0 && arrow.x < 1280 &&
+                arrow.y > 0 && arrow.y < 900
               );
               let blockedClickTest = 'no blocked arrow was available in the initial view';
               if (blockedArrow) {
@@ -98,8 +98,8 @@ jobs:
                 }
                 const target = before.arrows.find(arrow =>
                   !arrow.removed && !arrow.animating && arrow.canSlide &&
-                  arrow.x > 0 && arrow.x < window.innerWidth &&
-                  arrow.y > 0 && arrow.y < window.innerHeight
+                  arrow.x > 0 && arrow.x < 1280 &&
+                  arrow.y > 0 && arrow.y < 900
                 );
                 if (!target) throw new Error(`No clickable removable arrow found; remaining=${remainingBefore}`);
                 await page.mouse.click(target.x, target.y);
