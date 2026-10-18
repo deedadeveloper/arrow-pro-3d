@@ -1,0 +1,90 @@
+name: Browser Test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  browser-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Start local server
+        run: |
+          python3 -m http.server 4173 > /tmp/arrow-pro-server.log 2>&1 &
+          echo $! > /tmp/arrow-pro-server.pid
+
+      - name: Run browser test
+        run: |
+          npx --yes playwright@1.55.0 install --with-deps chromium
+          node <<'NODE'
+          const { chromium } = require('playwright');
+
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true,
+              args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']
+            });
+            const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+            const errors = [];
+            page.on('pageerror', error => errors.push(String(error)));
+            page.on('console', message => {
+              if (message.type() === 'error') errors.push(message.text());
+            });
+
+            await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+            await page.waitForTimeout(500);
+
+            const title = await page.title();
+            if (title !== 'Arrow Pro 3D') throw new Error(`Unexpected title: ${title}`);
+
+            const canvas = page.locator('#game-canvas');
+            if (await canvas.count() !== 1) throw new Error('3D canvas was not created');
+
+            const stats = await page.evaluate(() => ({
+              level: document.querySelector('#level-num')?.textContent,
+              shape: document.querySelector('#shape-name')?.textContent,
+              arrows: document.querySelector('#cell-count')?.textContent,
+              status: document.querySelector('#status')?.textContent,
+              webgl: !!document.querySelector('#game-canvas')?.getContext('webgl2')
+            }));
+
+            if (!stats.webgl) throw new Error('WebGL2 context was not available');
+            if (!stats.shape || stats.shape === '—') throw new Error('Tower shape did not render');
+            if (!stats.arrows || !stats.arrows.includes('/')) throw new Error(`Arrow count did not render: ${stats.arrows}`);
+
+            const before = stats.arrows;
+            await page.getByRole('button', { name: /Random Shape/ }).click();
+            await page.waitForTimeout(250);
+            const afterRandom = await page.locator('#cell-count').textContent();
+            if (!afterRandom.includes('/')) throw new Error('Random level interaction failed');
+
+            await page.getByRole('button', { name: /Next/ }).click();
+            await page.waitForTimeout(250);
+            const nextLevel = await page.locator('#level-num').textContent();
+            if (nextLevel !== '2') throw new Error(`Next level failed: ${nextLevel}`);
+
+            console.log(JSON.stringify({ title, initial: stats, afterRandom, nextLevel, errors }, null, 2));
+            if (errors.length) throw new Error(`Browser errors: ${errors.join(' | ')}`);
+
+            await browser.close();
+          })().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Stop local server
+        if: always()
+        run: |
+          if [ -f /tmp/arrow-pro-server.pid ]; then kill "$(cat /tmp/arrow-pro-server.pid)" || true; fi
+          cat /tmp/arrow-pro-server.log || true
