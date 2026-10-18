@@ -69,34 +69,26 @@ jobs:
               const interactionState = await page.evaluate(() => window.__ARROW_PRO_TEST__?.getState());
               if (!interactionState) throw new Error('Arrow interaction test hooks were not enabled');
 
-              let blockedClickTest = 'FAIL: no blocked arrow was found after 60 deterministic seeds';
-              let blockedClickSeed = null;
-              for (let seedIndex = 1; seedIndex <= 60; seedIndex++) {
-                const seed = `blocked-click-test-${seedIndex}`;
-                await page.evaluate(seed => window.__ARROW_PRO_TEST__.reloadLevel(1, seed), seed);
-                await page.waitForTimeout(80);
-                const state = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
-                const candidates = state.arrows.filter(arrow =>
-                  !arrow.removed && !arrow.canSlide &&
-                  arrow.x > 0 && arrow.x < 1280 &&
-                  arrow.y > 0 && arrow.y < 900
-                );
-                for (const candidate of candidates) {
-                  await page.mouse.click(candidate.x, candidate.y);
-                  await page.waitForTimeout(40);
-                  const status = await page.locator('#status').textContent();
-                  if (status.includes('Blocked')) {
-                    blockedClickTest = 'PASS';
-                    blockedClickSeed = seed;
-                    break;
-                  }
-                  // A different overlapping arrow may have received the click; try a fresh seed.
-                  break;
-                }
-                if (blockedClickSeed) break;
+              await page.evaluate(() => window.__ARROW_PRO_TEST__.reloadLevel(1));
+              const forcedBlocked = await page.evaluate(() => window.__ARROW_PRO_TEST__.forceBlockedScenario());
+              if (!forcedBlocked) throw new Error('Could not prepare blocked-arrow test scenario');
+              await page.waitForTimeout(100);
+              const blockedState = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+              const blockedArrow = blockedState.arrows.find(arrow =>
+                !arrow.removed && !arrow.canSlide &&
+                arrow.x > 0 && arrow.x < 1280 &&
+                arrow.y > 0 && arrow.y < 900
+              );
+              if (!blockedArrow) throw new Error('Forced blocked arrow was not visible/collidable in the viewport');
+              await page.mouse.click(blockedArrow.x, blockedArrow.y);
+              await page.waitForTimeout(50);
+              const blockedStatus = await page.locator('#status').textContent();
+              if (!blockedStatus.includes('Blocked')) {
+                throw new Error(`Clicking forced blocked arrow did not show blocked feedback: ${blockedStatus}`);
               }
-              if (!blockedClickSeed) throw new Error(blockedClickTest);
-              await page.waitForTimeout(320);
+              const blockedClickTest = 'PASS (deterministic forced blockage)';
+              const blockedClickSeed = 'test-hook-forced-blockage';
+              await page.waitForTimeout(330);
               const recoveredBlockedStatus = await page.locator('#status').textContent();
               if (recoveredBlockedStatus.includes('Blocked')) {
                 throw new Error(`Blocked-arrow feedback did not clear: ${recoveredBlockedStatus}`);
