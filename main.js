@@ -440,6 +440,26 @@ if (new URLSearchParams(window.location.search).has('test')) {
     },
     reloadLevel(level, seed = null) {
       renderLevel(level, seed);
+    },
+    forceBlockedScenario() {
+      const [target, blocker] = activePuzzle.arrows;
+      if (!target || !blocker) return false;
+      const b = activePuzzle.bounds;
+      target.x = b.width - 1;
+      target.y = b.height - 1;
+      target.z = b.depth - 1;
+      target.dx = -1; target.dy = 0; target.dz = 0;
+      target.direction = '-X';
+      blocker.x = b.width - 2;
+      blocker.y = b.height - 1;
+      blocker.z = b.depth - 1;
+      blocker.dx = 1; blocker.dy = 0; blocker.dz = 0;
+      blocker.direction = '+X';
+      target.removed = false; target.animating = false;
+      blocker.removed = false; blocker.animating = false;
+      renderArrows();
+      frameCamera(activeTower.bounds);
+      return true;
     }
   };
 }
