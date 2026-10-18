@@ -46,7 +46,7 @@ jobs:
             });
 
             try {
-              await page.goto('http://127.0.0.1:4173/', { waitUntil: 'networkidle' });
+              await page.goto('http://127.0.0.1:4173/?test=1', { waitUntil: 'networkidle' });
               await page.waitForTimeout(500);
 
               const title = await page.title();
@@ -65,6 +65,58 @@ jobs:
               if (!stats.webgl) throw new Error('WebGL2 context was not available');
               if (!stats.shape || stats.shape === '—') throw new Error(`Tower shape did not render: ${JSON.stringify(stats)}`);
               if (!stats.arrows || !stats.arrows.includes('/')) throw new Error(`Arrow count did not render: ${stats.arrows}`);
+
+              const interactionState = await page.evaluate(() => window.__ARROW_PRO_TEST__?.getState());
+              if (!interactionState) throw new Error('Arrow interaction test hooks were not enabled');
+
+              const blockedArrow = interactionState.arrows.find(arrow =>
+                !arrow.removed && !arrow.canSlide &&
+                arrow.x > 0 && arrow.x < window.innerWidth &&
+                arrow.y > 0 && arrow.y < window.innerHeight
+              );
+              let blockedClickTest = 'no blocked arrow was available in the initial view';
+              if (blockedArrow) {
+                await page.mouse.click(blockedArrow.x, blockedArrow.y);
+                await page.waitForTimeout(60);
+                const blockedStatus = await page.locator('#status').textContent();
+                if (!blockedStatus.includes('Blocked')) {
+                  throw new Error(`Clicking blocked arrow did not show blocked feedback: ${blockedStatus}`);
+                }
+                blockedClickTest = 'PASS';
+              }
+
+              await page.evaluate(() => window.__ARROW_PRO_TEST__.reloadLevel(1));
+              await page.waitForTimeout(100);
+              let clickRemovals = 0;
+              let actualClickSolve = false;
+              for (let attempt = 0; attempt < 20; attempt++) {
+                const before = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+                const remainingBefore = before.arrows.filter(arrow => !arrow.removed).length;
+                if (remainingBefore === 0) {
+                  actualClickSolve = true;
+                  break;
+                }
+                const target = before.arrows.find(arrow =>
+                  !arrow.removed && !arrow.animating && arrow.canSlide &&
+                  arrow.x > 0 && arrow.x < window.innerWidth &&
+                  arrow.y > 0 && arrow.y < window.innerHeight
+                );
+                if (!target) throw new Error(`No clickable removable arrow found; remaining=${remainingBefore}`);
+                await page.mouse.click(target.x, target.y);
+                await page.waitForTimeout(750);
+                const after = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+                const remainingAfter = after.arrows.filter(arrow => !arrow.removed).length;
+                if (remainingAfter < remainingBefore) {
+                  clickRemovals++;
+                } else {
+                  throw new Error(`Arrow click did not remove the selected arrow; before=${remainingBefore}, after=${remainingAfter}, status=${after.status}`);
+                }
+              }
+              const finalClickState = await page.evaluate(() => window.__ARROW_PRO_TEST__.getState());
+              actualClickSolve = finalClickState.arrows.every(arrow => arrow.removed);
+              if (!actualClickSolve) {
+                throw new Error(`Could not clear level through real pointer clicks; removed=${clickRemovals}, remaining=${finalClickState.arrows.filter(arrow => !arrow.removed).length}, status=${finalClickState.status}`);
+              }
 
               const generatorResults = await page.evaluate(() => {
                 const results = [];
@@ -119,6 +171,9 @@ jobs:
                 result: 'PASS',
                 title,
                 initial: stats,
+                blockedClickTest,
+                clickRemovals,
+                actualClickSolve,
                 proceduralLevelsTested: generatorResults.length,
                 generatorResults,
                 afterRandom,
