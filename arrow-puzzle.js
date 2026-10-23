@@ -1,4 +1,6 @@
 (function () {
+  'use strict';
+
   const DIRECTIONS = [
     { x: 1, y: 0, z: 0, name: '+X' },
     { x: -1, y: 0, z: 0, name: '-X' },
@@ -10,8 +12,9 @@
 
   function hashSeed(value) {
     let h = 2166136261 >>> 0;
-    for (let i = 0; i < String(value).length; i += 1) {
-      h ^= String(value).charCodeAt(i);
+    const text = String(value ?? 'arrow-puzzle');
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
       h = Math.imul(h, 16777619) >>> 0;
     }
     return h || 1;
@@ -36,7 +39,6 @@
     let x = arrow.x + arrow.dx;
     let y = arrow.y + arrow.dy;
     let z = arrow.z + arrow.dz;
-
     while (
       x >= 0 && x < bounds.width &&
       y >= 0 && y < bounds.height &&
@@ -47,56 +49,54 @@
       y += arrow.dy;
       z += arrow.dz;
     }
-
     return true;
   }
 
   function isSolvable(arrows, bounds) {
-    const remaining = arrows.map(arrow => ({ ...arrow }));
-    const occupied = new Set(remaining.map(arrow => key(arrow.x, arrow.y, arrow.z)));
-
-    let removed = 0;
+    const remaining = arrows.map(a => ({ ...a }));
+    const occupied = new Set(remaining.map(a => key(a.x, a.y, a.z)));
     while (remaining.length) {
-      let found = false;
-      for (let i = 0; i < remaining.length; i += 1) {
-        const arrow = remaining[i];
-        if (!canSlide(arrow, occupied, bounds)) continue;
-        occupied.delete(key(arrow.x, arrow.y, arrow.z));
-        remaining.splice(i, 1);
-        removed += 1;
-        found = true;
-        break;
-      }
-      if (!found) return false;
+      const index = remaining.findIndex(a => canSlide(a, occupied, bounds));
+      if (index < 0) return false;
+      const [removed] = remaining.splice(index, 1);
+      occupied.delete(key(removed.x, removed.y, removed.z));
     }
-
-    return removed === arrows.length;
+    return true;
   }
 
   function shuffle(items, random) {
-    for (let i = items.length - 1; i > 0; i -= 1) {
+    for (let i = items.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
       [items[i], items[j]] = [items[j], items[i]];
     }
     return items;
   }
 
+  function directionFromNormal(normal) {
+    return DIRECTIONS.find(d =>
+      d.x === normal.x && d.y === normal.y && d.z === normal.z
+    );
+  }
+
   function makeCandidate(surface, level, random) {
     const positions = shuffle(surface.slice(), random);
     const count = Math.min(
       positions.length,
-      Math.max(8, Math.min(48, 7 + Math.floor(level * 1.7)))
+      Math.max(8, Math.min(64, 7 + Math.floor(level * 1.7)))
     );
     const arrows = [];
     const used = new Set();
 
-    for (let i = 0; i < positions.length && arrows.length < count; i += 1) {
-      const cell = positions[i];
+    for (const cell of positions) {
+      if (arrows.length >= count) break;
       const positionKey = key(cell.x, cell.y, cell.z);
-      if (used.has(positionKey)) continue;
+      if (used.has(positionKey) || !cell.normals?.length) continue;
       used.add(positionKey);
 
-      const direction = DIRECTIONS[Math.floor(random() * DIRECTIONS.length)];
+      const normal = cell.normals[Math.floor(random() * cell.normals.length)];
+      const direction = directionFromNormal(normal);
+      if (!direction) continue;
+
       arrows.push({
         id: arrows.length,
         x: cell.x,
@@ -105,10 +105,11 @@
         dx: direction.x,
         dy: direction.y,
         dz: direction.z,
-        direction: direction.name
+        direction: direction.name,
+        removed: false,
+        animating: false
       });
     }
-
     return arrows;
   }
 
@@ -116,46 +117,32 @@
     const random = rng(`${seed}:arrows`);
     const maxAttempts = 350;
 
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const arrows = makeCandidate(tower.surface, level, random);
       if (arrows.length >= 2 && isSolvable(arrows, tower.bounds)) {
         return {
-          seed,
-          attempt,
-          arrows,
-          total: arrows.length,
-          bounds: tower.bounds,
-          solvable: true
+          seed, attempt, arrows, total: arrows.length,
+          bounds: tower.bounds, solvable: true
         };
       }
     }
 
-    // Deterministic fallback: one arrow per selected surface cell, each aimed
-    // outward from its first exposed face. This is always removable.
     const fallback = tower.surface
       .slice(0, Math.min(tower.surface.length, Math.max(8, Math.min(32, level + 8))))
       .map((cell, index) => {
         const normal = cell.normals[0] || { x: 1, y: 0, z: 0 };
-        const direction = DIRECTIONS.find(d => d.x === normal.x && d.y === normal.y && d.z === normal.z) || DIRECTIONS[0];
+        const direction = directionFromNormal(normal) || DIRECTIONS[0];
         return {
           id: index,
-          x: cell.x,
-          y: cell.y,
-          z: cell.z,
-          dx: direction.x,
-          dy: direction.y,
-          dz: direction.z,
-          direction: direction.name
+          x: cell.x, y: cell.y, z: cell.z,
+          dx: direction.x, dy: direction.y, dz: direction.z,
+          direction: direction.name, removed: false, animating: false
         };
       });
 
     return {
-      seed,
-      attempt: maxAttempts,
-      arrows: fallback,
-      total: fallback.length,
-      bounds: tower.bounds,
-      solvable: isSolvable(fallback, tower.bounds)
+      seed, attempt: maxAttempts, arrows: fallback, total: fallback.length,
+      bounds: tower.bounds, solvable: isSolvable(fallback, tower.bounds)
     };
   }
 
