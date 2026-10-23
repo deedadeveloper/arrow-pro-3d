@@ -1,88 +1,30 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-const PLAYTEST_TOKEN = new URLSearchParams(window.location.search).get('playtest');
-const PLAYTEST_SESSION = (() => {
-  if (!PLAYTEST_TOKEN) return null;
-  const key = 'arrow-pro-playtest-session';
-  let value = sessionStorage.getItem(key);
-  if (!value) {
-    value = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    sessionStorage.setItem(key, value);
-  }
-  return value;
-})();
-function recordPlaytestEvent(type, detail = {}) {
-  if (!PLAYTEST_TOKEN || !PLAYTEST_SESSION) return;
-  const event = {
-    sessionId: PLAYTEST_SESSION,
-    token: PLAYTEST_TOKEN,
-    type,
-    at: new Date().toISOString(),
-    level: document.getElementById('level-num')?.textContent || null,
-    detail
-  };
-  fetch('/api/events', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(event),
-    keepalive: true
-  }).catch(() => {});
-}
+'use strict';
 
-const canvasHost = document.getElementById('game-canvas');
-const levelEl = document.getElementById('level-num');
-const shapeEl = document.getElementById('shape-name');
-const cellEl = document.getElementById('cell-count');
-const statusEl = document.getElementById('status');
-const levelInput = document.getElementById('level-input');
-const tower = new THREE.Group();
-const arrowLayer = new THREE.Group();
+const $ = id => document.getElementById(id);
+const canvasHost = $('game-canvas');
+const levelEl = $('level-num');
+const shapeEl = $('shape-name');
+const cellEl = $('cell-count');
+const statusEl = $('status');
+const levelInput = $('level-input');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x090b14);
-scene.fog = new THREE.Fog(0x090b14, 24, 55);
+scene.fog = new THREE.Fog(0x090b14, 24, 60);
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
 camera.position.set(11, 10, 15);
 
 let renderer;
 try {
-  // Mobile browsers can refuse high-performance / multisampled contexts.
-  renderer = new THREE.WebGLRenderer({
-    antialias: false,
-    alpha: false,
-    depth: true,
-    stencil: false,
-    powerPreference: 'low-power',
-    failIfMajorPerformanceCaveat: false,
-    preserveDrawingBuffer: false
-  });
-} catch (primaryError) {
-  console.error('Primary WebGL initialization failed:', primaryError);
-  try {
-    // Retry with the smallest practical WebGL context configuration.
-    renderer = new THREE.WebGLRenderer({
-      antialias: false,
-      alpha: false,
-      depth: true,
-      stencil: false,
-      powerPreference: 'default',
-      failIfMajorPerformanceCaveat: false,
-      preserveDrawingBuffer: false
-    });
-  } catch (fallbackError) {
-    const message = 'WebGL is unavailable in this browser. Open this game in Chrome or enable hardware acceleration, then reload. If Chrome also fails, restart the browser to release graphics resources.';
-    statusEl.textContent = message;
-    statusEl.style.color = '#ff7b72';
-    canvasHost.setAttribute('aria-label', message);
-    recordPlaytestEvent('webgl_context_failed', {
-      primary: String(primaryError?.message || primaryError),
-      fallback: String(fallbackError?.message || fallbackError),
-      userAgent: navigator.userAgent
-    });
-    throw fallbackError;
-  }
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' });
+} catch (error) {
+  statusEl.textContent = `WebGL unavailable: ${error?.message || error}`;
+  statusEl.style.color = '#ff7b72';
+  throw error;
 }
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -90,27 +32,23 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 canvasHost.replaceWith(renderer.domElement);
 renderer.domElement.id = 'game-canvas';
-renderer.domElement.setAttribute('aria-label', '3D Arrow Pro tower puzzle');
+renderer.domElement.setAttribute('aria-label', 'Arrow Pro 3D game board');
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 4, 0);
 controls.enablePan = false;
 controls.enableDamping = true;
 controls.dampingFactor = 0.075;
-controls.minDistance = 7;
-controls.maxDistance = 30;
-controls.minPolarAngle = 0.35;
-controls.maxPolarAngle = Math.PI - 0.35;
 controls.rotateSpeed = 0.75;
 controls.zoomSpeed = 0.8;
-controls.addEventListener('start', () => statusEl.textContent = 'Rotate the tower by dragging.');
-controls.addEventListener('end', () => statusEl.textContent = 'Tower ready. Pick an arrow.');
+controls.minDistance = 6;
+controls.maxDistance = 32;
 
+const tower = new THREE.Group();
+const arrowLayer = new THREE.Group();
 scene.add(tower);
 tower.add(arrowLayer);
 
-const hemi = new THREE.HemisphereLight(0xb9d7ff, 0x15101f, 1.7);
-scene.add(hemi);
+scene.add(new THREE.HemisphereLight(0xb9d7ff, 0x15101f, 1.7));
 const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
 keyLight.position.set(8, 16, 10);
 keyLight.castShadow = true;
@@ -132,117 +70,82 @@ const grid = new THREE.GridHelper(22, 22, 0x293044, 0x161b29);
 grid.position.y = -0.16;
 scene.add(grid);
 
-const towerMaterials = [
+const voxelMaterials = [
   new THREE.MeshStandardMaterial({ color: 0x39445d, transparent: true, opacity: 0.48, roughness: 0.42, metalness: 0.28 }),
   new THREE.MeshStandardMaterial({ color: 0x667799, transparent: true, opacity: 0.16, roughness: 0.2, metalness: 0.45 })
 ];
 const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x8ca1c8, transparent: true, opacity: 0.34 });
 const frameMaterial = new THREE.LineBasicMaterial({ color: 0xf6821f, transparent: true, opacity: 0.22 });
-const surfaceMaterial = new THREE.MeshStandardMaterial({ color: 0xf6821f, emissive: 0x5a2300, emissiveIntensity: 0.7, transparent: true, opacity: 0.34, roughness: 0.35, metalness: 0.2 });
-
-const arrowShaftMaterial = new THREE.MeshStandardMaterial({ color: 0xf6821f, emissive: 0x4c1d00, emissiveIntensity: 0.65, roughness: 0.3, metalness: 0.45 });
-const arrowHeadMaterial = new THREE.MeshStandardMaterial({ color: 0xffc078, emissive: 0x7a3100, emissiveIntensity: 0.8, roughness: 0.24, metalness: 0.35 });
+const shaftMaterial = new THREE.MeshStandardMaterial({ color: 0xf6821f, emissive: 0x4c1d00, emissiveIntensity: 0.65, roughness: 0.3, metalness: 0.45 });
+const headMaterial = new THREE.MeshStandardMaterial({ color: 0xffc078, emissive: 0x7a3100, emissiveIntensity: 0.8, roughness: 0.24, metalness: 0.35 });
 const blockedMaterial = new THREE.MeshStandardMaterial({ color: 0xff3b30, emissive: 0x7d0800, emissiveIntensity: 1.8, roughness: 0.28, metalness: 0.35 });
 const selectedMaterial = new THREE.MeshStandardMaterial({ color: 0x6fffe9, emissive: 0x087d70, emissiveIntensity: 1.4, roughness: 0.22, metalness: 0.45 });
-const arrowShaftGeometry = new THREE.CylinderGeometry(0.105, 0.105, 0.48, 10);
-const arrowHeadGeometry = new THREE.ConeGeometry(0.23, 0.34, 10);
+const shaftGeometry = new THREE.CylinderGeometry(0.105, 0.105, 0.48, 10);
+const headGeometry = new THREE.ConeGeometry(0.23, 0.34, 10);
 
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-let pointerDown = null;
-let currentLevel = Number(localStorage.getItem('arrow3d_renderer_level') || 1);
-let autoRotate = false;
-let spinVelocity = 0.004;
+let currentLevel = Math.max(1, Number(localStorage.getItem('arrow3d_level') || 1));
 let activeTower = null;
 let activePuzzle = null;
 let movingArrow = null;
 let solved = false;
+let autoRotate = false;
+let pointerDown = null;
 
-function key(x, y, z) {
-  return `${x},${y},${z}`;
-}
+function key(x, y, z) { return `${x},${y},${z}`; }
 
 function cellPosition(cell, bounds) {
   return new THREE.Vector3(
     cell.x - (bounds.width - 1) / 2,
-    cell.y,
+    cell.y - (bounds.height - 1) / 2,
     cell.z - (bounds.depth - 1) / 2
   );
 }
 
-function clearGroup(group) {
-  while (group.children.length) {
-    const child = group.children.pop();
-    child.traverse(obj => {
-      if (obj.geometry && obj.userData.disposeGeometry) obj.geometry.dispose();
+function clearObject(object) {
+  while (object.children.length) {
+    const child = object.children.pop();
+    child.traverse(node => {
+      if (node.geometry && node.userData.disposeGeometry) node.geometry.dispose();
     });
   }
 }
 
-function clearTower() {
-  while (tower.children.length) {
-    const child = tower.children.pop();
-    child.traverse(obj => {
-      if (obj.geometry && obj.userData.disposeGeometry) obj.geometry.dispose();
-    });
-  }
+function buildTowerVisual(towerData) {
+  clearObject(tower);
   tower.add(arrowLayer);
-}
 
-function addVoxel(cell, bounds) {
-  const size = 0.92;
-  const geometry = new THREE.BoxGeometry(size, size, size);
-  const material = towerMaterials[(cell.y + cell.x + cell.z) & 1];
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.copy(cellPosition(cell, bounds));
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.userData.cell = cell;
-  mesh.userData.disposeGeometry = true;
-
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
-  edges.userData.disposeGeometry = true;
-  mesh.add(edges);
-  tower.add(mesh);
-}
-
-function addSurfaceMarker(cell, bounds) {
-  const base = new THREE.BoxGeometry(0.25, 0.25, 0.25);
-  for (const normal of cell.normals) {
-    const marker = new THREE.Mesh(base, surfaceMaterial);
-    marker.position.copy(cellPosition(cell, bounds));
-    marker.position.x += normal.x * 0.5;
-    marker.position.y += normal.y * 0.5;
-    marker.position.z += normal.z * 0.5;
-    marker.scale.setScalar(0.5);
-    marker.userData.surfaceCell = cell;
-    marker.userData.disposeGeometry = false;
-    tower.add(marker);
+  for (const cell of towerData.cells) {
+    const geometry = new THREE.BoxGeometry(0.92, 0.92, 0.92);
+    const mesh = new THREE.Mesh(geometry, voxelMaterials[(cell.x + cell.y + cell.z) & 1]);
+    mesh.position.copy(cellPosition(cell, towerData.bounds));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.disposeGeometry = true;
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
+    edges.userData.disposeGeometry = true;
+    mesh.add(edges);
+    tower.add(mesh);
   }
-}
 
-function frameTower(bounds) {
-  const box = new THREE.BoxGeometry(bounds.width + 0.3, bounds.height + 0.3, bounds.depth + 0.3);
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(box), frameMaterial);
-  edges.position.y = (bounds.height - 1) / 2;
-  edges.userData.disposeGeometry = true;
-  tower.add(edges);
+  const box = new THREE.BoxGeometry(
+    towerData.bounds.width + 0.3,
+    towerData.bounds.height + 0.3,
+    towerData.bounds.depth + 0.3
+  );
+  const frame = new THREE.LineSegments(new THREE.EdgesGeometry(box), frameMaterial);
+  frame.userData.disposeGeometry = true;
+  tower.add(frame);
 }
 
 function createArrowMesh(arrow) {
   const group = new THREE.Group();
-  group.name = `arrow-${arrow.id}`;
   group.userData.arrow = arrow;
+  group.name = `arrow-${arrow.id}`;
 
-  const shaft = new THREE.Mesh(arrowShaftGeometry, arrowShaftMaterial);
-  shaft.castShadow = true;
-  shaft.userData.arrowGroup = group;
-
-  const head = new THREE.Mesh(arrowHeadGeometry, arrowHeadMaterial);
+  const shaft = new THREE.Mesh(shaftGeometry, shaftMaterial);
+  const head = new THREE.Mesh(headGeometry, headMaterial);
   head.position.y = 0.39;
-  head.castShadow = true;
-  head.userData.arrowGroup = group;
-
+  shaft.castShadow = head.castShadow = true;
   group.add(shaft, head);
   group.position.copy(cellPosition(arrow, activePuzzle.bounds));
   group.quaternion.setFromUnitVectors(
@@ -253,8 +156,7 @@ function createArrowMesh(arrow) {
 }
 
 function renderArrows() {
-  clearGroup(arrowLayer);
-  const bounds = activePuzzle.bounds;
+  clearObject(arrowLayer);
   for (const arrow of activePuzzle.arrows) {
     arrow.mesh = createArrowMesh(arrow);
     arrowLayer.add(arrow.mesh);
@@ -262,11 +164,9 @@ function renderArrows() {
 }
 
 function occupiedMap() {
-  return new Map(
-    activePuzzle.arrows
-      .filter(arrow => !arrow.removed && !arrow.animating)
-      .map(arrow => [key(arrow.x, arrow.y, arrow.z), arrow])
-  );
+  return new Map(activePuzzle.arrows
+    .filter(a => !a.removed && !a.animating)
+    .map(a => [key(a.x, a.y, a.z), a]));
 }
 
 function canSlide(arrow) {
@@ -275,7 +175,6 @@ function canSlide(arrow) {
   let x = arrow.x + arrow.dx;
   let y = arrow.y + arrow.dy;
   let z = arrow.z + arrow.dz;
-
   while (
     x >= 0 && x < activePuzzle.bounds.width &&
     y >= 0 && y < activePuzzle.bounds.height &&
@@ -291,32 +190,27 @@ function canSlide(arrow) {
 
 function setArrowMaterial(arrow, material) {
   if (!arrow.mesh) return;
-  arrow.mesh.children.forEach(child => {
-    child.material = material;
-  });
+  arrow.mesh.children.forEach(child => { child.material = material; });
 }
 
-function flashBlocked(arrow) {
-  if (!arrow.mesh || arrow.animating || arrow.removed) return;
+function blocked(arrow) {
+  if (!arrow.mesh || arrow.removed || arrow.animating) return;
   const mesh = arrow.mesh;
   const original = mesh.position.clone();
   setArrowMaterial(arrow, blockedMaterial);
   statusEl.textContent = 'Blocked — another arrow is in the way.';
-  recordPlaytestEvent('arrow_blocked', { arrowId: arrow.id, direction: arrow.direction });
-
   const started = performance.now();
   function shake(now) {
-    const t = Math.min(1, (now - started) / 280);
+    const t = Math.min(1, (now - started) / 260);
     if (t < 1) {
-      const strength = Math.sin(t * Math.PI * 6) * (1 - t) * 0.13;
+      const amount = Math.sin(t * Math.PI * 7) * (1 - t) * 0.12;
       mesh.position.copy(original);
-      mesh.position.x += strength;
-      mesh.position.y += Math.sin(t * Math.PI * 7) * (1 - t) * 0.05;
+      mesh.position.x += amount;
       requestAnimationFrame(shake);
     } else {
       mesh.position.copy(original);
-      setArrowMaterial(arrow, arrowShaftMaterial);
-      arrow.mesh.children[1].material = arrowHeadMaterial;
+      setArrowMaterial(arrow, shaftMaterial);
+      if (mesh.children[1]) mesh.children[1].material = headMaterial;
       if (!solved) statusEl.textContent = 'Pick an arrow with a clear path.';
     }
   }
@@ -324,230 +218,167 @@ function flashBlocked(arrow) {
 }
 
 function removeArrow(arrow) {
-  if (!arrow.mesh || arrow.animating || arrow.removed || movingArrow) return;
+  if (movingArrow || arrow.removed || arrow.animating) return;
   if (!canSlide(arrow)) {
-    recordPlaytestEvent('arrow_attempt_blocked', { arrowId: arrow.id, direction: arrow.direction });
-    flashBlocked(arrow);
+    blocked(arrow);
     return;
   }
 
   movingArrow = arrow;
   arrow.animating = true;
   setArrowMaterial(arrow, selectedMaterial);
-  arrow.mesh.children[1].material = selectedMaterial;
+  if (arrow.mesh.children[1]) arrow.mesh.children[1].material = selectedMaterial;
 
   const start = arrow.mesh.position.clone();
   const direction = new THREE.Vector3(arrow.dx, arrow.dy, arrow.dz);
   const distance = Math.max(activePuzzle.bounds.width, activePuzzle.bounds.height, activePuzzle.bounds.depth) + 3;
   const end = start.clone().addScaledVector(direction, distance);
   const started = performance.now();
-  const duration = 360 + Math.min(300, distance * 18);
+  const duration = 420;
 
-  function animateOut(now) {
+  function animate(now) {
     const t = Math.min(1, (now - started) / duration);
     const eased = 1 - Math.pow(1 - t, 3);
     arrow.mesh.position.lerpVectors(start, end, eased);
     arrow.mesh.scale.setScalar(1 - eased * 0.18);
-
     if (t < 1) {
-      requestAnimationFrame(animateOut);
+      requestAnimationFrame(animate);
       return;
     }
-
     arrow.removed = true;
-    recordPlaytestEvent('arrow_removed', { arrowId: arrow.id, direction: arrow.direction });
     arrow.animating = false;
     arrow.mesh.visible = false;
     movingArrow = null;
+    updateCount();
     checkSolved();
   }
-  requestAnimationFrame(animateOut);
+  requestAnimationFrame(animate);
+}
+
+function updateCount() {
+  const remaining = activePuzzle?.arrows.filter(a => !a.removed).length || 0;
+  cellEl.textContent = remaining;
 }
 
 function checkSolved() {
-  const remaining = activePuzzle.arrows.filter(arrow => !arrow.removed).length;
-  if (remaining === 0) {
+  const remaining = activePuzzle.arrows.filter(a => !a.removed).length;
+  if (!remaining) {
     solved = true;
-    statusEl.textContent = `🎉 Level ${currentLevel} cleared! Press Next for another tower.`;
-    recordPlaytestEvent('level_cleared', { level: currentLevel, arrowCount: activePuzzle.total });
+    statusEl.textContent = `🎉 Level ${currentLevel} cleared!`;
     return;
   }
-
-  const movable = activePuzzle.arrows.some(arrow => !arrow.removed && !arrow.animating && canSlide(arrow));
+  const movable = activePuzzle.arrows.some(a => !a.removed && !a.animating && canSlide(a));
   statusEl.textContent = movable
     ? `${remaining} arrows remaining.`
-    : 'No moves available — this level should never happen. Regenerating…';
-
-  if (!movable) {
-    setTimeout(() => renderLevel(currentLevel), 180);
-  }
+    : 'No moves available. Regenerating this level…';
+  if (!movable) setTimeout(() => loadLevel(currentLevel), 500);
 }
 
-function updateStats() {
-  levelEl.textContent = currentLevel;
-  shapeEl.textContent = activeTower.type;
-  cellEl.textContent = `${activePuzzle.arrows.filter(a => !a.removed).length}/${activePuzzle.total}`;
-  levelInput.value = currentLevel;
-}
-
-function frameCamera(bounds) {
-  const centerY = (bounds.height - 1) / 2;
-  controls.target.set(0, centerY, 0);
-  const span = Math.max(bounds.width, bounds.depth, bounds.height);
-  camera.position.set(span * 1.35, span * 0.95, span * 1.65);
-  controls.minDistance = Math.max(6, span * 0.9);
-  controls.maxDistance = Math.max(20, span * 3.2);
-  controls.update();
-  controls.saveState();
-}
-
-function renderLevel(level = currentLevel, seedOverride = null) {
-  currentLevel = Math.max(1, Math.floor(level));
-  localStorage.setItem('arrow3d_renderer_level', String(currentLevel));
-  const seed = seedOverride || `arrow-pro-${currentLevel}`;
-  activeTower = window.ArrowTowerGenerator.generateTower({ level: currentLevel, seed });
-  activePuzzle = window.ArrowPuzzleGenerator.generate({ tower: activeTower, level: currentLevel, seed });
+function loadLevel(level, options = {}) {
+  currentLevel = Math.max(1, Math.floor(Number(level) || 1));
+  localStorage.setItem('arrow3d_level', String(currentLevel));
+  levelInput.value = String(currentLevel);
   solved = false;
   movingArrow = null;
+  statusEl.style.color = '';
+  statusEl.textContent = 'Generating tower…';
 
-  clearTower();
-  tower.rotation.set(0, 0, 0);
+  const seed = options.seed || `arrow-pro-3d-${currentLevel}`;
+  activeTower = ArrowTowerGenerator.generateTower({
+    level: currentLevel,
+    seed,
+    type: options.type
+  });
+  activePuzzle = ArrowPuzzleGenerator.generate({
+    tower: activeTower,
+    level: currentLevel,
+    seed
+  });
 
-  for (const cell of activeTower.cells) addVoxel(cell, activeTower.bounds);
-  for (const cell of activeTower.surface) addSurfaceMarker(cell, activeTower.bounds);
-  frameTower(activeTower.bounds);
+  buildTowerVisual(activeTower);
   renderArrows();
-  frameCamera(activeTower.bounds);
-  updateStats();
-  statusEl.textContent = `${activeTower.type} tower ready — pick an arrow with a clear path.`;
-  recordPlaytestEvent('level_loaded', { level: currentLevel, shape: activeTower.type, arrows: activePuzzle.total, seed });
-}
+  levelEl.textContent = currentLevel;
+  shapeEl.textContent = activeTower.type;
+  updateCount();
 
-function renderRandomTower() {
-  renderLevel(currentLevel, `${Date.now()}-${Math.random()}`);
-  statusEl.textContent = `${activeTower.type} tower randomized — find the clear paths.`;
+  const center = new THREE.Vector3(0, 0, 0);
+  controls.target.copy(center);
+  const size = Math.max(activeTower.bounds.width, activeTower.bounds.height, activeTower.bounds.depth);
+  controls.minDistance = Math.max(5, size * 0.9);
+  controls.maxDistance = Math.max(24, size * 3.2);
+  camera.position.set(size * 1.4, size * 1.15, size * 1.7);
+  controls.update();
+  statusEl.textContent = `${activePuzzle.total} arrows. Pick one with a clear path.`;
 }
 
 function pickArrow(event) {
-  if (movingArrow || solved) return;
+  if (!activePuzzle || movingArrow) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
-
   const hits = raycaster.intersectObjects(arrowLayer.children, true);
-  if (!hits.length) return;
-  const group = hits[0].object.userData.arrowGroup;
-  const arrow = group?.userData?.arrow;
-  if (arrow) {
-    recordPlaytestEvent('arrow_clicked', { arrowId: arrow.id, direction: arrow.direction, canSlide: canSlide(arrow) });
-    removeArrow(arrow);
-  }
+  const hit = hits.find(h => h.object.userData.arrowGroup || h.object.parent?.userData.arrow);
+  if (!hit) return;
+  const group = hit.object.userData.arrowGroup || hit.object.parent;
+  if (group?.userData.arrow) removeArrow(group.userData.arrow);
 }
 
+renderer.domElement.addEventListener('pointerdown', event => {
+  pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
+});
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!pointerDown) return;
+  const dx = event.clientX - pointerDown.x;
+  const dy = event.clientY - pointerDown.y;
+  const elapsed = performance.now() - pointerDown.time;
+  pointerDown = null;
+  if (Math.hypot(dx, dy) < 8 && elapsed < 600) pickArrow(event);
+});
+
+$('spin-btn').addEventListener('click', event => {
+  autoRotate = !autoRotate;
+  event.currentTarget.textContent = autoRotate ? '⏸ Stop Spin' : '⟳ Auto Spin';
+});
+
+$('reset-view-btn').addEventListener('click', () => {
+  if (!activeTower) return;
+  const size = Math.max(activeTower.bounds.width, activeTower.bounds.height, activeTower.bounds.depth);
+  camera.position.set(size * 1.4, size * 1.15, size * 1.7);
+  controls.target.set(0, 0, 0);
+  controls.update();
+});
+
+$('random-btn').addEventListener('click', () => {
+  const types = ArrowTowerGenerator.SHAPES;
+  const type = types[Math.floor(Math.random() * types.length)];
+  loadLevel(currentLevel, { seed: `random-${Date.now()}`, type });
+});
+
+$('prev-btn').addEventListener('click', () => loadLevel(Math.max(1, currentLevel - 1)));
+$('next-btn').addEventListener('click', () => loadLevel(currentLevel + 1));
+$('load-level-btn').addEventListener('click', () => loadLevel(levelInput.value));
+levelInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') loadLevel(levelInput.value);
+});
+
 function resize() {
-  const width = Math.max(280, Math.min(window.innerWidth - 32, 900));
-  const height = Math.max(420, Math.min(window.innerHeight * 0.66, 680));
+  const rect = renderer.domElement.parentElement.getBoundingClientRect();
+  const width = Math.max(1, rect.width);
+  const height = Math.max(320, rect.height || width * 0.75);
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
 }
+window.addEventListener('resize', resize);
 
 function animate() {
   requestAnimationFrame(animate);
-  if (autoRotate) tower.rotation.y += spinVelocity;
+  if (autoRotate && !movingArrow) tower.rotation.y += 0.004;
   controls.update();
   renderer.render(scene, camera);
 }
 
-renderer.domElement.addEventListener('pointerdown', event => {
-  pointerDown = { x: event.clientX, y: event.clientY };
-});
-renderer.domElement.addEventListener('pointerup', event => {
-  if (!pointerDown) return;
-  const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
-  pointerDown = null;
-  if (moved < 8) pickArrow(event);
-});
-renderer.domElement.addEventListener('pointercancel', () => { pointerDown = null; });
-
-window.addEventListener('resize', resize);
-window.addEventListener('error', event => recordPlaytestEvent('javascript_error', { message: String(event.message || 'Unknown error'), source: event.filename || '', line: event.lineno || 0 }));
-window.addEventListener('unhandledrejection', event => recordPlaytestEvent('unhandled_rejection', { message: String(event.reason?.message || event.reason || 'Unknown rejection') }));
-document.getElementById('prev-btn').addEventListener('click', () => renderLevel(currentLevel - 1));
-document.getElementById('next-btn').addEventListener('click', () => renderLevel(currentLevel + 1));
-document.getElementById('random-btn').addEventListener('click', () => { recordPlaytestEvent('random_shape_clicked'); renderRandomTower(); });
-document.getElementById('spin-btn').addEventListener('click', event => {
-  recordPlaytestEvent('auto_spin_toggled', { enabled: !autoRotate });
-  autoRotate = !autoRotate;
-  event.currentTarget.textContent = autoRotate ? '⏸ Stop Spin' : '⟳ Auto Spin';
-  statusEl.textContent = autoRotate ? 'Auto rotation enabled.' : 'Auto rotation stopped.';
-});
-document.getElementById('reset-view-btn').addEventListener('click', () => {
-  controls.reset();
-  statusEl.textContent = 'Camera reset.';
-});
-document.getElementById('load-level-btn').addEventListener('click', () => renderLevel(Number(levelInput.value) || 1));
-levelInput.addEventListener('keydown', event => {
-  if (event.key === 'Enter') renderLevel(Number(levelInput.value) || 1);
-});
-
-// Test-only inspection hooks are enabled only for browser tests using ?test=1.
-if (new URLSearchParams(window.location.search).has('test')) {
-  window.__ARROW_PRO_TEST__ = {
-    getState() {
-      const rect = renderer.domElement.getBoundingClientRect();
-      const projected = new THREE.Vector3();
-      return {
-        level: currentLevel,
-        status: statusEl.textContent,
-        solved,
-        arrows: activePuzzle.arrows.map(arrow => {
-          const point = arrow.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
-          return {
-            id: arrow.id,
-            removed: arrow.removed === true,
-            animating: arrow.animating === true,
-            canSlide: !arrow.removed && !arrow.animating && canSlide(arrow),
-            x: rect.left + (point.x + 1) * rect.width / 2,
-            y: rect.top + (1 - point.y) * rect.height / 2
-          };
-        })
-      };
-    },
-    reloadLevel(level, seed = null) {
-      renderLevel(level, seed);
-    },
-    forceBlockedScenario() {
-      const [target, blocker] = activePuzzle.arrows;
-      if (!target || !blocker) return false;
-      const b = activePuzzle.bounds;
-      target.x = b.width - 1;
-      target.y = b.height - 1;
-      target.z = b.depth - 1;
-      target.dx = -1; target.dy = 0; target.dz = 0;
-      target.direction = '-X';
-      blocker.x = b.width - 2;
-      blocker.y = b.height - 1;
-      blocker.z = b.depth - 1;
-      blocker.dx = 1; blocker.dy = 0; blocker.dz = 0;
-      blocker.direction = '+X';
-      target.removed = false; target.animating = false;
-      blocker.removed = false; blocker.animating = false;
-      renderArrows();
-      frameCamera(activeTower.bounds);
-      return true;
-    },
-    triggerBlockedFeedback() {
-      const target = activePuzzle.arrows[0];
-      if (!target || canSlide(target)) return false;
-      removeArrow(target);
-      return statusEl.textContent.includes('Blocked');
-    }
-  };
-}
-
+loadLevel(currentLevel);
 resize();
-renderLevel(currentLevel);
-recordPlaytestEvent('session_started', { userAgent: navigator.userAgent, viewport: { width: window.innerWidth, height: window.innerHeight }, pixelRatio: window.devicePixelRatio });
 animate();
